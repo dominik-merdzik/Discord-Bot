@@ -11,7 +11,6 @@ def main():
 
     bot = Bot(command_prefix='.')
 
-
     #print bot info when it boots up
     @bot.event
     async def on_ready():
