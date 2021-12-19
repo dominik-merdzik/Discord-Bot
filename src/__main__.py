@@ -1,14 +1,19 @@
 # file app/__main__.py
 
+from discord import client
+from discord.ext.commands.core import check, check_any
+
+
 def main():
     from discord.ext.commands import Bot
     import discord.utils
     import random
     import secrets
+    import asyncio # To get the exception
 
     random.seed() # Seed the RNG.
     
-    bot = Bot(command_prefix='!')
+    bot = Bot(command_prefix='.')
 
     # Prints the bot information upon bootup.
     @bot.event
@@ -40,6 +45,13 @@ def main():
             await ctx.channel.send('Heads!')
         elif rand % 2 == 1:
             await ctx.channel.send('Tails!')
+
+    @bot.command(pass_context=True)
+    async def questions(ctx):  
+        msg = await client.wait_for("message", check=check)
+        
+        if msg(ctx) == 'luca': 
+            await ctx.channel.send('"LucaTheSmallDickMenace Likes Men"') 
 
     # Command to make an announcement to whole server, but in a specific channel.
     @bot.command(pass_context=True)
