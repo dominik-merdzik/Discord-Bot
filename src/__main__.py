@@ -299,6 +299,7 @@ def main():
     # Run the bot using the DISCORD_TOKEN constant from .env.
     bot.run(DISCORD_TOKEN)
 
+    #test
 
 if __name__ == '__main__':
     main()
