@@ -1,35 +1,38 @@
 # file app/__main__.py
 
-from discord import client
-from discord.ext.commands.core import check, check_any
-
-
+# Should be incremented each release.
+version_code = 'v1.0.3'
 def main():
-
+    import string
     from discord.ext.commands import Bot
     from discord.ext import tasks, commands
     import discord.utils
     import random
     import os
     from dotenv import load_dotenv
-    import gsapi_builder;
-    from datetime import datetime
+    import gsapi_builder
+    import sheets_parser
     import logging
+    import events as events
+    import urllib
+    import re
 
-    random.seed() # Seed the RNG.
+    random.seed()  # Seed the RNG.
     load_dotenv()
 
     # Getting environment variables.
-    SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
-    RANGE_NAME = os.getenv("RANGE_NAME")
-    DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-    ANNOUNCEMENT_CHANNEL = os.getenv("ANNOUNCEMENT_CHANNEL")
+    SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
+    RANGE_NAME = os.getenv('RANGE_NAME')
+    COURSE_SHEET = os.getenv('COURSE_SHEET')
+    DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+    ANNOUNCEMENT_CHANNEL = os.getenv('ANNOUNCEMENT_CHANNEL')
+    GUILD_ID = int(os.getenv('GUILD_ID'))
 
     # Logging formating to view time stamps and level of log information
     logging.basicConfig(
-         format='%(asctime)s %(levelname)-8s %(message)s',
-         level=logging.INFO,
-         datefmt='%Y-%m-%d %H:%M:%S')
+        format='%(asctime)s %(levelname)-8s %(message)s',
+        level=logging.INFO,
+        datefmt='%Y-%m-%d %H:%M:%S')
 
     # Build the Google Sheets API service.
     service = gsapi_builder.build_service()
@@ -40,163 +43,36 @@ def main():
     # Print the bot information upon bootup.
     @bot.event
     async def on_ready():
-        logging.info('\nLogged in as\n' + bot.user.name)
+        logging.info('Logged In')
+        logging.info('Username: ' + bot.user.name)
         logging.debug(bot.user.id)
-        print('------')
+        logging.info('== Connection Successful ==')
 
     # Print that the bot is connected to the server.
     @bot.event
     async def on_connect():
-        logging.info("--Connected to server--")
+        logging.info('=== Connecting To Server ===')
 
-    # Declare the FetchDate class, inheriting methods from Cog.
-    class FetchDate(commands.Cog):
-        def __init__(self):
-            self.fetch_due_dates.start()
-
-        # Declare a function to unload the fetch_due_date cog.
-        def cog_unload(self):
-            self.fetch_due_dates.cancel()
-
-        # Declare the fetch_due_dates loop. Loop will run every 24 hours.
-        @tasks.loop(minutes=60.0)
-        async def fetch_due_dates(self, channel_id=None):
-            if (datetime.now().hour != 6 and channel_id == None):
-                return
-            logging.info("Fetching due dates...")
-
-            # Use Google Sheets API to fetch due dates.
-            sheet = service.spreadsheets()
-            result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME).execute()
-            values = result.get('values', [])
-
-            # If no data was received, do not force any messages to be sent.
-            if not values:
-                logging.warning('No data found.')
-
-            # Otherwise, send a message to @everyone about what assignments are due within a week.
-            else:
-
-                header = values[0] # Header row with column names (A1:E1)
-
-                # Grab the indexes of the headers from A1:E1.
-                index = {
-                    'Course Name': header.index('Course Name'),
-                    'Assignment Name': header.index('Assignment Name'),
-                    'Due Date': header.index('Due Date'),
-                    'Days Until Due Date': header.index('Days Until Due Date'),
-                    'Notes': header.index('Notes')
-                }
-
-                # Declare assignments dictionary, will become an argument for announce_due_dates().
-                assignments = {}
-
-                for row in values[1:]:
-                    # Should there be no IndexError raised...
-                    try:
-                        # If the class name has changed from the A column, change the current_class variable.
-                        if row[index['Course Name']] != '':
-                            course = row[index['Course Name']]
-
-                        # Assign the assignment name, due date, and days until due date.
-                        assignment = row[index['Assignment Name']]
-                        due_date = row[index['Due Date']]
-                        days_left = row[index['Days Until Due Date']]
-
-                        # If there are notes in this row, assign the value to notes.
-                        if len(row) == 5:
-                            notes = row[index['Notes']]
-
-                        # Otherwise, just assign it as a blank value.
-                        else:
-                            notes = ""
-
-                        # If the assignment is due in a week, add it to the final message to @everyone.
-                        if int(days_left) >= 0 and int(days_left) <= 7:
-                            if course not in assignments.keys():
-                                assignments[course] = []
-                            assignments[course].append([assignment, due_date, days_left, notes])
-
-                    # Otherwise, pass.
-                    except IndexError:
-                        pass
-
-            # Make a call to the @everyone event handler with the assignments dictionary passed as an argument.
-            await announce_due_dates(assignments, channel_id=channel_id)
-
-        @fetch_due_dates.before_loop
-        async def before_fetch(self):
-            logging.debug("Initiating data fetching.")
-
-    # Declare a function to send an announcement to a hard-coded channel number in .env.
-    @bot.event
-    async def announce_due_dates(due_date_dictionary, channel_id=None):
-        # Preface with @everyone header.
-        message = "@everyone"
-
-        # Instantiate the Embed.
-        embedded_message = discord.Embed(title="Due Dates For Today", colour=discord.Colour.from_rgb(160, 165, 25))
-
-        await bot.wait_until_ready() # Bot needs to wait until ready to send message in correct channel.
-
-        # Checks if a channel_id has been passed as an argument, then checks .env ANNOUNCEMENT_CHANNEL, then checks for announcements channel, otherwises returns error.
-        if bot.get_channel(channel_id) != None:
-            # If a channel ID is provided that means the function was called on demand, meaning @everyone should be avoided.
-            message = ""
-            channel = bot.get_channel(channel_id)
-        elif bot.get_channel(int(ANNOUNCEMENT_CHANNEL)) != None:
-            channel = bot.get_channel(int(ANNOUNCEMENT_CHANNEL))
-        elif discord.utils.get(bot.get_all_channels(), name="announcements") != None:
-            channel = discord.utils.get(bot.get_all_channels(), name="announcements")
-        else:
-            logging.error("Unable to find channel to send announcement to.")
-            return
-
-        # For every course in the due date dictionary...
-        for course in due_date_dictionary.keys():
-            course_assignments = ""
-            for assignment in due_date_dictionary[course]:
-
-                # Parse the information from the assignment list.
-                name = assignment[0]
-                due_date = assignment[1]
-                days_left = int(assignment[2])
-
-                # Change days_left to a different code block color depending on days left.
-                if days_left > 3:
-                    days_left = f"```diff\n+ {days_left} days remaining.```"
-                elif days_left > 0:
-                    days_left = f"```fix\n- {days_left} days remaining.```"
-                else:
-                    days_left = f"```diff\n- {days_left} days remaining.```"
-
-                notes = assignment[3]
-
-                # Append the information to the course_assignments.
-                if notes == "":
-                    course_assignments += f"\n**{name}**\nDue on {due_date}, {datetime.now().year}.\n{days_left}\n\n"
-                else:
-                    course_assignments += f"\n**{name}**\nDue on {due_date}, {datetime.now().year}.\n{days_left}__Notes:__\n{notes}\n"
-            
-            # Add an extra embed field for the every course.
-            embedded_message.add_field(name=f"__{course}__", value=course_assignments + "", inline=False)
-
-        # Add project information to bottom.
-        embedded_message.add_field(name="", value="\nI am part of the Lakehead CS 2021 Guild's Discord-Bot project! [Contributions on GitHub are welcome!](https://github.com/Paulmski/Discord-Bot/blob/main/CONTRIBUTING.md)")
-        
-        # Send the message to the announcements channel.
-        await channel.send(message, embed=embedded_message, delete_after=86400.0)
+    @bot.command(pass_context=True)
+    async def version(ctx):
+        '''
+        Show current version.
+        '''
+        await ctx.channel.send(version_code)
 
     # Flip a coin and tell the user what the result was.
     @bot.command(pass_context=True)
     async def coinflip(ctx):
         '''
+        Flips a coin.
         According to Teare and Murray's "Probability of a tossed coin landing on edge", extrapolations from a physical simulation model suggests "that the probability of an American nickel landing on edge is approximately 1 in 6000 tosses."
+        
         Murray, Daniel B., and Scott W. Teare. “Probability of a Tossed Coin Landing on Edge.” Physical Review E, vol. 48, no. 4, 1993, pp. 2547–2552., https://doi.org/10.1103/physreve.48.2547.
         '''
         rand = random.randint(0, 6000)
         if rand == 777:
-            responses = ['Holy cow, it landed on it\'s side!', 'You won\'t believe this but it landed on its side!', 'Despite all odds, it landed on it\'s side!']
+            responses = ['Holy cow, it landed on it\'s side!', 'You won\'t believe this but it landed on its side!',
+                         'Despite all odds, it landed on it\'s side!']
             random_response = random.choice([0, len(responses)])
             await ctx.channel.send(responses[random_response])
         elif rand % 2 == 0:
@@ -204,40 +80,225 @@ def main():
         elif rand % 2 == 1:
             await ctx.channel.send('Tails!')
 
-    @bot.command(pass_context=True)
-    async def questions(ctx):  
-        msg = await client.wait_for("message", check=check)
-        
-        if msg(ctx) == 'luca': 
-            await ctx.channel.send('"LucaTheSmallDickMenace Likes Men"') 
-
-    # Command to make an announcement to whole server, but in a specific channel.
-    @bot.command(pass_context=True)
-    async def announce(ctx, subCommand: str, subSubCommand: str, arg: str):
-        # Used to configure settings related to this command.
-        if (subCommand == 'config'):
-            # Used to configure which channel the bot should make announcements too.
-            if (subSubCommand == 'channel'):
-                # TODO: Allow for the ability to modify channel for announcement.
-                channel = discord.utils.get(ctx.guild.channels, name=arg)
-                await channel.send('This is the new announcement channel.')
-
     # Command to to fetch due dates on demand.
     @bot.command(pass_context=True)
     async def homework(ctx):
         await fetcher.fetch_due_dates(channel_id=ctx.channel.id)
+        logging.info(f'User {ctx.author} requested homework.')
 
+    # Command to list the assignments for a specific class.
+    @bot.command(pass_context=True)
+    async def list(ctx, *args):
+        '''
+        Lists the upcoming assignments within 14 days.
+
+        !list all             - Lists every assignment due in 14 days.
+        !list [code]          - Lists the course's assignments due in 14 days.
+        !list courses         - Lists all courses in the semester.
+        !list courses <codes> - Lists all courses of the subjects provided (e.g. "!list courses math comp entr").
+        '''
+        
+        if len(args) == 0:
+            await ctx.channel.send(
+                'Invalid code entered, make sure you have the right course code e.g. `!list comp1271`.')
+            return
+        if SPREADSHEET_ID is None or RANGE_NAME is None:
+            await ctx.channel.send('Internal error, no spreadsheet or range specified.')
+            logging.warning('No SPREADSHEET_ID or RANGE_NAME specified in .env.')
+            return
+
+        final_assignments = []
+        code = args[0].upper().replace('-', '').replace(' ','')
+        assignments = sheets_parser.fetch_assignments(service, SPREADSHEET_ID, RANGE_NAME)
+
+        message = '' # Message containing all specified courses.
+        if code == 'COURSES':
+            courses = sheets_parser.fetch_courses(service, SPREADSHEET_ID, COURSE_SHEET)
+            final_courses = []
+            if args[-1].upper() == 'COURSES':
+                for course in courses:
+                    if course.code not in message:
+                        message += '\n' + course.code + ' - ' + course.name
+            else:
+                # This section of code is currently O(n^2) if it can be optimized please do.
+                for arg in args:
+                    for course in courses:
+                        if arg.upper() in course.code:
+                            # Checks if the course has already been added to the message.
+                            if  course.code not in message:
+                                message += '\n' + course.code + ' - ' + course.name
+            await ctx.channel.send(message)
+            return
+
+        # Remove all courses that don't have a matching course code and aren't within 14 days.
+        for assignment in assignments:
+            if (code == 'ALL' or assignment.code == code) and -1 <= assignment.days_left <= 14:
+                final_assignments.append(assignment)
+
+        # No matching assignments found.
+        if final_assignments == []:
+            await ctx.channel.send(f'Couldn\'t find any assignments matching the course code "{code}".')
+            return
+
+        title = 'Assignments for {}'.format(code)
+        await fetcher.announce_assignments(final_assignments, title=title, channel=ctx.channel, delete_after=6 * 60 * 60.0)
+        logging.info(f'User {ctx.author} requested assignments for {code}.')
+
+    # Command to create, modify permissions for, or delete private study groups.
+    @bot.command(pass_context=True)
+    async def group(ctx, *args):
+        '''
+        Creates private study groups.
+
+        !group create [group_name] @users - Creates a private study group and invites the mentions.
+        !group delete [group_name]        - Deletes a private study group you are in.
+        !group add    [group_name] @users - Adds mentioned users to a study group you are in.
+        '''
+        # Iterates through arguments to obtain the group name of command. As soon as it encounters a special character it exits and the remaining characters are the designated group name.
+        group_name = ''
+        for word in args[1:]:
+            for character in word:
+                if character in string.ascii_letters + string.digits + '-':
+                    group_name += character
+                else:
+                    break
+            else:
+                group_name += '-'
+                continue
+            break
+        group_name = group_name.strip('-').lower()
+
+        if group_name == '':
+            await ctx.send('Invalid group name.')
+            return
+        # Or if the user tries to make a command on an already existing text-channel...
+        for channel in ctx.guild.text_channels:
+            if channel.category.name != 'study-groups' and channel.name == group_name:
+                await ctx.send('You cannot call `!group` using other channels as arguments.')
+                logging.info(
+                    f'User {ctx.author} attempted to {args[0]} a study group using an already-existing channel name, #{group_name}.')
+                return
+
+                # Command to create a study group.
+        if args[0] == 'create':
+
+            # Check if a study group with the same name already exists.
+            for text_channel in ctx.guild.text_channels:
+                if text_channel.name == group_name:
+                    await ctx.send(f'Sorry, {group_name} already exists!')
+                    return
+
+            # Create study group category if it doesn't exist.
+            study_category = None
+            for category in ctx.guild.categories:
+                if category.name == 'study-groups':
+                    study_category = category
+            if study_category is None:
+                study_category = await ctx.guild.create_category('study-groups')
+
+            # Create the new text and voice channels.
+            text_channel = await ctx.guild.create_text_channel(group_name, category=study_category)
+            voice_channel = await ctx.guild.create_voice_channel(group_name, category=study_category)
+
+            # Set channel so that @everyone cannot see it.
+            await text_channel.set_permissions(ctx.guild.default_role, read_messages=False)
+            await voice_channel.set_permissions(ctx.guild.default_role, read_messages=False)
+
+            for member in ctx.message.mentions:
+                # Allow mentioned user to view channel.
+                await text_channel.set_permissions(member, read_messages=True)
+                await voice_channel.set_permissions(member, read_messages=True)
+
+            await text_channel.set_permissions(ctx.author, read_messages=True)
+            await voice_channel.set_permissions(ctx.author, read_messages=True)
+
+            logging.info(f'User {ctx.author} successfully created private study group "{group_name}".')
+
+        # Command to delete a study group text and voice channel.
+        # Requires that the author already has read permissions for the channel.
+        elif args[0] == 'delete':
+
+            channel_name = group_name
+            text_channel = discord.utils.get(ctx.guild.text_channels, name=channel_name)
+
+            # Check if text_channel exists.
+            if text_channel is None:
+                await ctx.send(f'Sorry, "{group_name}" doesn\'t exist!')
+                return
+
+            # Check if permissions are valid.
+            overwrite = text_channel.overwrites_for(ctx.author)
+            if overwrite.read_messages == False:
+                await ctx.send(f'Sorry, you don\'t have permissions to delete "{group_name}".')
+                return
+
+            # Delete the text and voice channel.
+            await text_channel.delete()
+            voice_channel = discord.utils.get(ctx.guild.voice_channels, name=channel_name)
+            await voice_channel.delete()
+
+            logging.info(f'User {ctx.author} successfully deleted private study group "{channel_name}".')
+
+        # Add a new user to an already existing study group.
+        elif args[0] == 'add':
+
+            channel_name = group_name.lower()
+            text_channel = discord.utils.get(ctx.guild.text_channels, name=channel_name)
+            voice_channel = discord.utils.get(ctx.guild.voice_channels, name=channel_name)
+
+            if text_channel is None or voice_channel is None:
+                await ctx.send('Sorry, that study group doesn\'t exist!')
+                return
+
+            # Check if author has permission to add a new member.
+            overwrite = text_channel.overwrites_for(ctx.author)
+            if overwrite.read_messages == False:
+                await ctx.send('Sorry, you don\'t have permissions to add a new member to this study group')
+                return
+
+            # Give permissions for all mentioned members.
+            for member in ctx.message.mentions:
+                await text_channel.set_permissions(member, read_messages=True)
+                await voice_channel.set_permissions(member, read_messages=True)
+
+            logging.info(f'User {ctx.author} added members to private study group "{channel_name}": {[x.name for x in ctx.message.mentions]}')
 
     # Print the message back.
-    @bot.command()
+    @bot.command(pass_context=True)
     async def repeat(ctx, *, arg):
-        await ctx.send(arg)
+        '''
+        Repeats what you say and then deletes the message after 60 seconds.
 
-    # Instantiate FetchDate class.
-    fetcher = FetchDate()
+        !repeat After me.  - Bot responds with "After me."
+        '''
+        await ctx.send(arg, delete_after=60)
+
+    # Command for user to search YouTube for a tutorial video.
+    @bot.command(pass_context=True)
+    async def search(ctx, *, arg):
+        '''
+        Searches for a YouTube tutorial video based on your search query.
+
+        !search Python Django - Searches for a Python Django tutorial on YouTube and returns the URL.
+        '''
+        arg_space = urllib.parse.quote(arg)
+        html = urllib.request.urlopen('https://www.youtube.com/results?search_query={}'.format(arg_space))
+        video_ids = re.findall(r'watch\?v=(\S{11})', html.read().decode())
+        await ctx.channel.send('https://www.youtube.com/watch?v=' + video_ids[0])
+
+        logging.info(f'User {ctx.author} searched for {arg_space}.')
+
+    # Only instantiate assignment fetcher and time scheduler if SPREADSHEET_ID and RANGE_NAME are specified.
+    if SPREADSHEET_ID is not None and RANGE_NAME is not None:
+        # Instantiate FetchDate and EventScheduler class.
+        fetcher = events.FetchDate(service=service, bot=bot)
+        scheduler = events.EventScheduler(service=service, bot=bot)
+    else:
+        logging.warning('No SPREADSHEET_ID or RANGE_NAME specified in .env.')
 
     # Run the bot using the DISCORD_TOKEN constant from .env.
     bot.run(DISCORD_TOKEN)
 
+
 if __name__ == '__main__':
-  main()
+    main()

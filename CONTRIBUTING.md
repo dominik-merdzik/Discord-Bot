@@ -11,7 +11,7 @@ We wish to see your contribution to this project, no matter your skill level! Th
 * [Testing the Bot](#Testing-the-Bot)
     * [Creating a Bot account](#Creating-A-Bot-Account)
     * [Letting the bot into your test server](#Letting-the-Bot-Into-Your-Test-Server)
-    * [Setting up `.env`](#Setting-Up-`.env`-Fully)
+    * [Setting up `.env`](#Setting-Up-env-Fully)
     * [Setting up Google Sheets API](#Making-Contact-With-The-Google-Sheets-API)
 * [List of Ways You Can Contribute](#List-of-Ways-You-Can-Contribute)
 
@@ -68,16 +68,20 @@ DISCORD_TOKEN = "v3RyR3A!diSCorDt0k3n1d"
 When you commit and push changes to your fork, do not add `.env`. Although `.gitignore` does this for you, do not forcibly add it anyways.
 
 #### Linking the Spreadsheet
-Find the spreadsheet's ID (before the `/view#gid=0` parameter in the URL), and assign it as a String to a constant called `SPREADSHEET_ID` in `.env`.
+Find the spreadsheet's ID (before the `/view#gid=0` or `/edit#gid=0` parameter in the URL), and assign it as a String to a constant called `SPREADSHEET_ID` in `.env`.
 
-You will also need to specify the `RANGE_NAME`. In Google Sheets, several spreadsheets are split into "books", the names of which can be seen along the bottom.
+You will need to specify the `RANGE_NAME`. In Google Sheets, several spreadsheets are split into "workbooks", the names of which can be seen along the bottom.
 
-Specify the current semester's book followed by the range of cells in which the Course Name, Due Date, Assignment Name, Days Remaining, and Notes are. 
+Specify the current semester's book followed by the range of cells in which the `Course Name, Due Date, Assignment Name, Days Remaining, and Notes` are.
+
+With the addition of Scheduled Events, please also define the `COURSE_SHEET` range for the workbook containing course information. Specify the range of cells where `Course Name, Day, Time, Ends, and Room` are contained.
+
 
 Example:
 ```python
 SPREADSHEET_ID = "t0t@llyr3@lspr3@dsh33t!d"
 RANGE_NAME = "Winter Semester!F1:J"
+COURSE_SHEET = "Courses!F1:J"
 ```
 
 #### Linking an Announcements Channel
@@ -91,6 +95,19 @@ Example:
 ANNOUNCEMENTS_CHANNEL = "123456789123456789"
 ```
 
+#### Guild Server ID
+For posting Scheduled Events, the bot needs to know the Guild's Server ID.
+
+The server ID can be found in the middle of the Discord URL (the integer part which never changes during navigation in the server), or copied from the server icon using Developer Mode's "Copy ID" feature.
+
+Note that the Guild Server ID can look very similar to the Channel ID.
+
+Example:
+
+```python
+GUILD_ID = "12338597971212344"
+```
+
 #### `.env` Full Example
 Once you filled all your `.env` variables, your file should look like this:
 
@@ -98,8 +115,13 @@ Once you filled all your `.env` variables, your file should look like this:
 DISCORD_TOKEN = "v3RyR3A!diSCorDt0k3n1d"
 SPREADSHEET_ID = "t0t@llyr3@lspr3@dsh33t!d"
 RANGE_NAME = "Winter Semester!F1:J"
+COURSE_SHEET = "Courses!F1:J"
 ANNOUNCEMENTS_CHANNEL = "123456789123456789"
+GUILD_ID = "12338597971212344"
 ```
+
+#### Robust Bot Architecture
+The next section will be about setting up the bot to work with the Google Sheets API (GSAPI). However, this is no longer an absolute requirement for the bot to run. If you do not want to go through setting up the GSAPI, you can simply omit the `SPREADSHEET_ID` and `RANGE_NAME` environmental variables from your `.env` file.
 
 ### Making Contact With The Google Sheets API
 Now, you need to set up an email account and enable the Google Sheets API through Google Cloud Platform.
@@ -117,7 +139,7 @@ Set the application type to `Desktop app` and give it any name.
 
 Now, from the Hamburger Menu, go to `Marketplace` and look up `Google Sheets API`. Enable the API on your account then go back to the `APIs & Services` section as before.
 
-Finally, you can download the OAuth2 Client ID. Download the file to the root directory Discord-Bot, and make sure you name it `credentials.json` !
+Finally, you can download the OAuth2 Client ID. Download the file to the `src` directory of Discord-Bot, and make sure you name it `credentials.json` !
 
 #### Step 4: Run the bot!
 The bot now has everything it needs to run. Run it from your local machine or a repl.it project and test it on a server you own.
@@ -126,9 +148,9 @@ The bot now has everything it needs to run. Run it from your local machine or a 
 ### Feature Requests or Bug Reports
 Do you have an idea for a feature the Discord bot could use? See a bug that needs squashing? Go ahead and add it to the [Issues browser](https://github.com/Paulmski/Discord-Bot/issues).
 
-If you are submitting a feature, title it using the convention `Feature request: Feature name` and describe what you would like the feature to do.
+If you are submitting a feature, you can use the `Feature Request` issue template to help you get started on suggesting a feature.
 
-Should you report a bug, title it using the convention `Bug: Bug name` and describe how you encountered the bug.
+When reporting bugs, please use the `Bug Report` issue template, and describe the bug using the steps outlined in the template. This way, it will be easier to reproduce your bug and make it clearer what changes need to be made to squash the bug.
 
 ### Cleaning Up Code, Refactoring
 If you want to improve the project's code, make those changes in the `develop` branch or a new branch in your fork, and then make a pull request!
